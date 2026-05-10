@@ -1,0 +1,33 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Logs (runtime data, not source)
+logs/trades.json
+logs/false_signals.json
+
+# Backtest data (large files)
+backtest/data/
+
+# ML models
+backtest/models/
+
+# IDE
+.vscode/
+.idea/
+
+# Private session notes
+conversation-history/
+
+# Logs folder (keep structure, not runtime data)
+logs/
