@@ -1,4 +1,4 @@
-# Shikra Trading System — Claude Code Rules & Guidelines
+﻿# Shikra Trading System — Claude Code Rules & Guidelines
 
 **Project:** Shikra — Professional-Grade Algorithmic Trading System  
 **Asset:** XAUUSD (Gold) Only  
