@@ -1,3 +1,4 @@
+
 ---
 description: Review config.yaml against Shikra project requirements defined in CLAUDE.md. Reports mismatches, missing values, and unsafe settings.
 ---

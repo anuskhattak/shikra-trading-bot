@@ -7,9 +7,12 @@ and clean shutdown. Credentials are never logged — masked at all times.
 """
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 import MetaTrader5 as mt5
@@ -55,6 +58,9 @@ class BrokerConnection:
         self._stop_event = threading.Event()
         self._health_thread: Optional[threading.Thread] = None
         self._events: list[ConnectionEvent] = []
+
+        # Ensure logs/ exists before any event writes (connection_events.json)
+        Path("logs").mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
     # Public API
@@ -177,6 +183,11 @@ class BrokerConnection:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    def _call_with_timeout(self, fn, timeout: float):
+        """Run fn() in a thread; raise FuturesTimeoutError if it exceeds timeout seconds."""
+        with ThreadPoolExecutor(max_workers=1) as ex:
+            return ex.submit(fn).result(timeout=timeout)
 
     def _record(self, event_type: str, error_message: Optional[str] = None) -> None:
         self._events.append(

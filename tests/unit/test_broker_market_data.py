@@ -9,13 +9,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-with patch.dict("sys.modules", {"MetaTrader5": MagicMock()}):
-    import MetaTrader5 as mt5
-    mt5.TIMEFRAME_D1 = 16408
-    mt5.TIMEFRAME_H4 = 16388
-    mt5.TIMEFRAME_H1 = 16385
-
-    from src.broker.market_data import MarketData, Timeframe, MIN_BARS
+import MetaTrader5 as mt5
+from src.broker.market_data import MarketData, Timeframe, MIN_BARS
 
 
 def _make_rates(count: int) -> list[dict]:

@@ -83,8 +83,9 @@ The system continuously monitors connection health. If the connection drops, the
 | Network drops while an order is in-flight | Log "Order Status Unknown", flag order for manual review, halt further order placement until connection restored |
 | System started during weekend when market is closed | Log "Market Closed — Weekend", enter standby mode, resume automatically on market open |
 | Spread exceeds maximum allowed threshold (config: `max_spread_points`) | Log "High Spread — Trade Skipped", skip trade, re-evaluate on next signal |
-| Account margin level is critically low | Log "Low Margin Warning", halt all new order placement, alert operator |
+| Account margin level ≤ 10% | Log "Low Margin Warning — margin at {level}%, threshold 10%", halt all new order placement, alert operator |
 | XAUUSD symbol temporarily unavailable on broker | Log "Symbol Unavailable", halt signal generation, retry symbol check every 60 seconds |
+| `connection_events.json` write fails (disk full / permission error) | Log WARNING "Event Log Write Failed — {error}", continue trading; audit gap noted in logs |
 
 ---
 
@@ -107,13 +108,15 @@ The system continuously monitors connection health. If the connection drops, the
 - **FR-013**: System MUST disconnect cleanly on shutdown — no orphaned connections left open
 - **FR-014**: System MUST expose current connection status at all times (Connected / Disconnected / Reconnecting)
 - **FR-015**: System MUST skip order placement when spread exceeds the configured maximum threshold
-- **FR-016**: System MUST halt order placement when account margin falls below a safe operating level
+- **FR-016**: System MUST halt order placement when account margin level falls below **10%** — checked via MT5 `account_info().margin_level` before each order submission
+- **FR-017**: System MUST load broker credentials (account number, password, server) exclusively from `.env` file — raw credential values MUST NOT be accepted or hardcoded anywhere in production code
+- **FR-018**: Unit tests MUST exist for `BrokerConnection` class covering at minimum 10 scenarios: successful connect, authentication failure, terminal unavailable, connect timeout, from_env credential loading, event file persistence, credentials absent from logs, health check triggers reconnect, emergency stop after 3 failures, clean disconnect, and uptime measurement
 
 ### Non-Functional Requirements
 
 - **NFR-001**: Broker credentials (account number, password) MUST never appear in any log file, console output, or error message — masked at all times
-- **NFR-002**: System MUST achieve connection uptime ≥ 99% during active trading sessions (Asia, London, New York)
-- **NFR-003**: All connection and order operations MUST be non-blocking — system responsiveness must not degrade during data fetch or order submission
+- **NFR-002**: System MUST achieve connection uptime ≥ 99% measured **per trading session** (Asia, London, New York tracked separately) — each session's uptime logged independently on disconnect
+- **NFR-003**: All connection and order operations MUST be **blocking with timeout** — each call blocks the caller thread but returns within its defined timeout (connect: 10s, market data: 2s, order: 5s); main thread never hangs indefinitely; timeout returns `None` or error result, never raises unhandled exception
 - **NFR-004**: System MUST operate correctly on Windows 10+ with MT5 terminal installed on the same machine
 - **NFR-005**: Log entries MUST be written atomically — no partial or corrupted entries in `logs/trades.json` or event logs
 
@@ -134,7 +137,7 @@ The system continuously monitors connection health. If the connection drops, the
 - **SC-002**: Current XAUUSD price data (bid/ask/spread) available within 2 seconds of connection
 - **SC-003**: Historical bar data for all 3 timeframes (D1, H4, H1) fetched with zero missing bars across a 200-bar lookback
 - **SC-004**: Market orders acknowledged by broker within 5 seconds of submission
-- **SC-005**: System automatically recovers from connection loss within 30 seconds without manual intervention
+- **SC-005**: System automatically recovers from connection loss within **30 seconds wall-clock time** (measured from connection drop detection to successful reconnect) without manual intervention
 - **SC-006**: 100% of connection events and order attempts are logged with timestamps — zero silent failures
 - **SC-007**: Zero orders placed without a valid stop loss AND take profit — system enforces this with 100% reliability
 - **SC-008**: System correctly enters emergency stop after 3 consecutive failed reconnection attempts
@@ -156,8 +159,19 @@ The system continuously monitors connection health. If the connection drops, the
 - **2 seconds** (market data): Reflects acceptable latency for real-time price feeds; longer delays indicate a degraded connection
 - **5 seconds** (order acknowledgment): Standard broker round-trip time for market orders under normal server load; aligns with MT5 execution benchmarks
 - **200 bars** (historical data): Minimum lookback required for D1 structure analysis in SMC methodology — covers approximately 40 weeks of daily data
-- **30 seconds** (reconnection): Balances recovery speed with avoiding broker-side rate limiting on repeated connection attempts
+- **30 seconds** (reconnection): Wall-clock time from drop detection to reconnect — balances recovery speed with broker-side rate limiting; 3 attempts × 10s pause fits within this budget assuming each attempt completes in ≤0s net (fast failure)
 - **3 attempts** (emergency stop): Industry-standard retry count before escalating to a human-intervention state
+- **10% margin level** (FR-016): Closest threshold to broker margin call without triggering it — broker typically issues margin call at 20–50%, so halting at 10% gives no buffer for recovery; chosen as minimal safe guard aligned with broker-side enforcement
+
+## Clarifications
+
+### Session 2026-05-11
+
+- Q: What is the minimum safe margin level for FR-016? → A: 10% — checked via `account_info().margin_level` before each order submission; log message includes actual level
+- Q: What is the uptime measurement window for NFR-002? → A: Per trading session (Asia / London / New York tracked separately); each session logged independently on disconnect
+- Q: What is the non-blocking contract for NFR-003? → A: Blocking with timeout — each call blocks but returns within defined timeout; never hangs; timeout returns None/error, never unhandled exception
+- Q: What should happen if connection_events.json write fails? → A: Log WARNING and continue trading — audit gap noted; trading must not halt for a non-critical log write failure
+- Q: How is SC-005 "30 seconds" measured? → A: Wall-clock total from connection drop detection to successful reconnect; not net wait time
 
 ## Out of Scope
 

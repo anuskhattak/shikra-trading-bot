@@ -11,18 +11,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Patch MT5 before any import so the module-level constants resolve correctly
-with patch.dict("sys.modules", {"MetaTrader5": MagicMock()}):
-    import MetaTrader5 as mt5
-    mt5.ORDER_TYPE_BUY = 0
-    mt5.ORDER_TYPE_SELL = 1
-    mt5.TRADE_ACTION_DEAL = 1
-    mt5.ORDER_TIME_GTC = 1
-    mt5.ORDER_FILLING_IOC = 1
-    mt5.TRADE_RETCODE_DONE = 10009
-    mt5.TRADE_RETCODE_NO_MONEY = 10019
-
-    from src.broker.order_manager import OrderManager, OrderType, TradeOrder
+import MetaTrader5 as mt5
+from src.broker.order_manager import OrderManager, OrderType, TradeOrder
 
 
 # ---------------------------------------------------------------------------
