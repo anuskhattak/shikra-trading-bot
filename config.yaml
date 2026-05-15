@@ -43,6 +43,18 @@ ml:
   confidence_threshold: 0.65
   model_path: backtest/models/
 
+smc_engine:
+  fractal_n: 2
+  lookback_window: 20
+  equal_level_tolerance_pips: 5
+  confidence_threshold: 0.65
+  weights:
+    bos_or_choch: 0.40
+    fvg: 0.30
+    order_block: 0.20
+    liquidity_sweep: 0.10
+  min_candles: 50
+
 logging:
   level: INFO
   trades_log: logs/trades.json
