@@ -16,6 +16,7 @@ build/
 logs/trades.json
 logs/connection_events.json
 logs/false_signals.json
+logs/risk_events.json
 
 # Backtest data (large files)
 backtest/data/
