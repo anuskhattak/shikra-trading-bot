@@ -45,18 +45,29 @@ smc:
   liquidity_sweep_buffer: 5
 
 sessions:
-  asia:
-    start: "00:00"
-    end: "06:00"
-    timezone: UTC
   london:
-    start: "08:00"
-    end: "12:00"
-    timezone: UTC
+    local_open:  "08:00"
+    local_close: "17:00"
+    timezone:    "Europe/London"
+    enabled:     true
   new_york:
-    start: "13:00"
-    end: "17:00"
-    timezone: UTC
+    local_open:  "08:00"
+    local_close: "17:00"
+    timezone:    "America/New_York"
+    enabled:     true
+
+filters:
+  spread:
+    max_spread_usd: 0.50
+  news:
+    pre_event_minutes:  30
+    post_event_minutes: 15
+    calendar_path: "data/news_calendar.json"
+    impact_levels: ["HIGH"]
+  volatility:
+    atr_lookback:      14
+    low_atr_ratio:     0.50
+    extreme_atr_ratio: 5.0
 
 ml:
   confidence_threshold: 0.65
@@ -78,3 +89,4 @@ logging:
   level: INFO
   trades_log: logs/trades.json
   signals_log: logs/false_signals.json
+  filters_log: logs/filter_decisions.json
