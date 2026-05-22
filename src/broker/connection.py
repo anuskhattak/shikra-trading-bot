@@ -5,6 +5,8 @@ Manages the full lifecycle of the MetaTrader 5 terminal connection:
 authentication, continuous health monitoring, automatic reconnection,
 and clean shutdown. Credentials are never logged — masked at all times.
 """
+import json
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 import MetaTrader5 as mt5
+from dotenv import load_dotenv
 from loguru import logger
 
 
@@ -47,6 +50,10 @@ class BrokerConnection:
     HEALTH_CHECK_INTERVAL = 10   # Detect loss within 10 s — FR-010
     RECONNECT_PAUSE = 10         # Pause between attempts; 3 × 10 s ≤ 30 s — SC-005
 
+    # T012: shared lock + path for atomic event log writes
+    _event_log_lock = threading.Lock()
+    _event_log_path = Path("logs/connection_events.json")
+
     def __init__(self, account: int, password: str, server: str) -> None:
         # Credentials held in memory only — never passed to logger
         self._account = account
@@ -58,6 +65,10 @@ class BrokerConnection:
         self._stop_event = threading.Event()
         self._health_thread: Optional[threading.Thread] = None
         self._events: list[ConnectionEvent] = []
+
+        # T030: uptime tracking fields — set when connect() is called
+        self._session_start: Optional[datetime] = None
+        self._connected_seconds: float = 0.0
 
         # Ensure logs/ exists before any event writes (connection_events.json)
         Path("logs").mkdir(parents=True, exist_ok=True)
@@ -74,6 +85,28 @@ class BrokerConnection:
     def is_connected(self) -> bool:
         return self._status == ConnectionStatus.CONNECTED
 
+    @property
+    def uptime_percent(self) -> float:
+        """T033: Ratio of connected seconds to total session seconds (NFR-002)."""
+        if self._session_start is None:
+            return 0.0
+        total = (datetime.utcnow() - self._session_start).total_seconds()
+        return round((self._connected_seconds / total) * 100, 2) if total > 0 else 100.0
+
+    @classmethod
+    def from_env(cls) -> "BrokerConnection":
+        """T011: Factory that reads credentials from environment (never hardcoded)."""
+        load_dotenv()
+        try:
+            account = int(os.environ["MT5_ACCOUNT"])
+            password = os.environ["MT5_PASSWORD"]
+            server = os.environ["MT5_SERVER"]
+        except KeyError as exc:
+            raise KeyError(
+                f"Missing required env var {exc} — set MT5_ACCOUNT, MT5_PASSWORD, MT5_SERVER"
+            ) from exc
+        return cls(account=account, password=password, server=server)
+
     def connect(self) -> bool:
         """
         Initialize MT5 terminal and authenticate with broker credentials.
@@ -81,16 +114,38 @@ class BrokerConnection:
         Returns True on success so the caller can proceed to market data.
         On any failure the system halts — no trading without authentication (FR-003).
         """
+        self._session_start = datetime.utcnow()  # T031: anchor for uptime calculation
         self._status = ConnectionStatus.CONNECTING
         logger.info("Connecting to MT5 terminal...")
 
-        if not mt5.initialize():
+        # T015: timeout-guard initialize — hangs up to 10 s before raising
+        try:
+            initialized = self._call_with_timeout(mt5.initialize, timeout=10.0)
+        except FuturesTimeoutError:
+            self._record("failed", "Connection Timeout — MT5 initialize did not respond within 10s")
+            logger.error("Connection Timeout — MT5 initialize did not respond within 10s")
+            self._status = ConnectionStatus.DISCONNECTED
+            return False
+
+        if not initialized:
             self._record("failed", f"MT5 initialize() failed: {mt5.last_error()}")
             logger.error("Terminal Unavailable — MT5 could not initialize")
             self._status = ConnectionStatus.DISCONNECTED
             return False
 
-        authorized = mt5.login(self._account, self._password, self._server)
+        # T016: timeout-guard login — hangs up to 10 s before raising
+        try:
+            authorized = self._call_with_timeout(
+                lambda: mt5.login(self._account, self._password, self._server),
+                timeout=10.0,
+            )
+        except FuturesTimeoutError:
+            self._record("failed", "Connection Timeout — MT5 login did not respond within 10s")
+            logger.error("Connection Timeout — MT5 login did not respond within 10s")
+            mt5.shutdown()
+            self._status = ConnectionStatus.DISCONNECTED
+            return False
+
         if not authorized:
             # Log only the numeric error code — never the password (NFR-001)
             code, _ = mt5.last_error()
@@ -123,6 +178,7 @@ class BrokerConnection:
             mt5.shutdown()
             self._status = ConnectionStatus.DISCONNECTED
             self._record("disconnected")
+            logger.info(f"Session uptime: {self.uptime_percent}% — disconnecting")
             logger.info("Disconnected from MT5 terminal cleanly")
 
     # ------------------------------------------------------------------
@@ -146,6 +202,9 @@ class BrokerConnection:
                 self._status = ConnectionStatus.RECONNECTING
                 self._record("disconnected", "Health check failed — connection dropped")
                 self._reconnect_loop()
+            else:
+                # T032: accumulate connected time for uptime tracking — NFR-002
+                self._connected_seconds += self.HEALTH_CHECK_INTERVAL
 
     def _ping(self) -> bool:
         """Return True when the MT5 terminal reports an active broker connection."""
@@ -189,7 +248,29 @@ class BrokerConnection:
         with ThreadPoolExecutor(max_workers=1) as ex:
             return ex.submit(fn).result(timeout=timeout)
 
+    def _log_event_to_file(self, event: ConnectionEvent) -> None:
+        """T013: Append event to connection_events.json atomically under lock."""
+        entry = {
+            "event_type": event.event_type,
+            "timestamp": event.timestamp.isoformat(),
+            "error_message": event.error_message,
+        }
+        try:
+            with self._event_log_lock:
+                existing: list = []
+                if self._event_log_path.exists():
+                    try:
+                        existing = json.loads(self._event_log_path.read_text())
+                    except json.JSONDecodeError:
+                        existing = []
+                existing.append(entry)
+                self._event_log_path.write_text(json.dumps(existing, indent=2))
+        except OSError as exc:
+            # Trading must continue even if log write fails — warn only (spec edge case)
+            logger.warning(f"Event Log Write Failed — {exc}")
+
     def _record(self, event_type: str, error_message: Optional[str] = None) -> None:
-        self._events.append(
-            ConnectionEvent(event_type=event_type, error_message=error_message)
-        )
+        # T014: persist every event to disk for auditability
+        event = ConnectionEvent(event_type=event_type, error_message=error_message)
+        self._events.append(event)
+        self._log_event_to_file(event)

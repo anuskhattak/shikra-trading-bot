@@ -5,19 +5,27 @@ Every order attempt — success, failure, or rejection — is logged atomically
 to trades.json before the function returns. No silent failures (FR-009).
 An order without a valid stop loss AND take profit never reaches the broker (FR-007).
 """
-import json
-import threading
-from dataclasses import asdict, dataclass
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
-from pathlib import Path
 from typing import Optional
 
 import MetaTrader5 as mt5
 from loguru import logger
 
+from src.execution.audit_logger import write_audit_entry
+from src.execution.models import AuditAction, TradeAuditEntry
+
 SYMBOL = "XAUUSD"
-TRADES_LOG = Path("logs/trades.json")
+
+
+def _call_with_timeout(fn, timeout: float):
+    """T024: Run fn() in a thread; raise FuturesTimeoutError if it exceeds timeout seconds."""
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        return ex.submit(fn).result(timeout=timeout)
 
 
 class OrderType(Enum):
@@ -49,16 +57,13 @@ class OrderManager:
     2. Spread must be within the allowed threshold (checked via MarketData upstream)
     3. After submission, broker error codes map to human-readable log messages
 
-    Thread safety: trades.json writes are serialized with _log_lock so concurrent
-    signals can never interleave and corrupt the log file (NFR-005).
+    Thread safety: trades.json writes are delegated to audit_logger.AUDIT_LOG_LOCK
+    (single lock for the whole process — eliminates dual-lock race on trades.json, T008).
     """
-
-    _log_lock = threading.Lock()
 
     def __init__(self, magic_number: int, slippage_points: int = 5) -> None:
         self._magic = magic_number
         self._slippage = slippage_points
-        TRADES_LOG.parent.mkdir(parents=True, exist_ok=True)
 
     def place_order(
         self,
@@ -116,7 +121,48 @@ class OrderManager:
             "type_filling": mt5.ORDER_FILLING_IOC,
         }
 
-        result = mt5.order_send(request)
+        # T025: reject before touching broker when margin is critically low (FR-016).
+        # margin_level == 0.0 when no positions are open (MT5 returns 0 for 0/0);
+        # only gate when there is actually used margin (account.margin > 0).
+        account = mt5.account_info()
+        if account is not None and account.margin > 0 and account.margin_level < 10.0:
+            logger.warning(
+                f"Low Margin Warning — margin at {account.margin_level}%, threshold 10%"
+            )
+            order = TradeOrder(
+                order_type=order_type.name,
+                entry_price=price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                volume=volume,
+                magic_number=self._magic,
+                timestamp=datetime.utcnow().isoformat(),
+                max_loss_usd=max_loss_usd,
+                result="rejected",
+                error_message=f"Low Margin — margin at {account.margin_level}%, threshold 10%",
+            )
+            self._log_trade(order)
+            return order
+
+        # T025b: timeout guard — broker hang must not block the engine indefinitely
+        try:
+            result = _call_with_timeout(lambda: mt5.order_send(request), timeout=5.0)
+        except FuturesTimeoutError:
+            order = TradeOrder(
+                order_type=order_type.name,
+                entry_price=price,
+                stop_loss=stop_loss,
+                take_profit=take_profit,
+                volume=volume,
+                magic_number=self._magic,
+                timestamp=datetime.utcnow().isoformat(),
+                max_loss_usd=max_loss_usd,
+                result="timeout",
+                error_message="Order Timeout — Status Unknown; manual review required",
+            )
+            logger.critical("Order Timeout — Status Unknown; manual review required")
+            self._log_trade(order)
+            return order
 
         order = TradeOrder(
             order_type=order_type.name,
@@ -198,28 +244,31 @@ class OrderManager:
         return round(sl_points * point_value * volume, 2)
 
     # ------------------------------------------------------------------
-    # Atomic log write
+    # Audit log write — delegates to audit_logger (single lock, T008)
     # ------------------------------------------------------------------
 
     def _log_trade(self, order: TradeOrder) -> None:
-        """
-        Append trade record to trades.json atomically.
+        """Convert TradeOrder to TradeAuditEntry and delegate to audit_logger."""
+        if order.result == "success":
+            action = AuditAction.ORDER_PLACED
+            rejection_reason = None
+        else:
+            action = AuditAction.ORDER_REJECTED
+            rejection_reason = order.error_message
 
-        Lock ensures no two threads can interleave their writes, preventing
-        partial JSON entries that would corrupt the audit log (NFR-005).
-        """
-        entry = asdict(order)
-
-        with self._log_lock:
-            records: list = []
-            if TRADES_LOG.exists() and TRADES_LOG.stat().st_size > 0:
-                try:
-                    with open(TRADES_LOG, "r", encoding="utf-8") as fh:
-                        records = json.load(fh)
-                except json.JSONDecodeError:
-                    logger.warning("trades.json parse error — starting fresh log")
-
-            records.append(entry)
-
-            with open(TRADES_LOG, "w", encoding="utf-8") as fh:
-                json.dump(records, fh, indent=2, default=str)
+        entry = TradeAuditEntry(
+            audit_id=str(uuid.uuid4()),
+            timestamp_utc=order.timestamp,
+            action_type=action,
+            signal_id="",  # OrderManager operates below signal level
+            ticket_id=order.broker_ticket,
+            direction=order.order_type,
+            lot_size=order.volume,
+            requested_entry_price=order.entry_price,
+            actual_fill_price=order.entry_price if order.result == "success" else None,
+            sl_price=order.stop_loss,
+            tp2_price=order.take_profit,
+            max_loss_usd=order.max_loss_usd,
+            rejection_reason=rejection_reason,
+        )
+        write_audit_entry(entry)

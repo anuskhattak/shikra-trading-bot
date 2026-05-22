@@ -10,8 +10,8 @@ import os
 import pytest
 
 INTEGRATION_SKIP = pytest.mark.skipif(
-    not os.getenv("MT5_LOGIN"),
-    reason="MT5 integration tests require MT5_LOGIN, MT5_PASSWORD, MT5_SERVER env vars",
+    not os.getenv("MT5_ACCOUNT"),
+    reason="MT5 integration tests require MT5_ACCOUNT, MT5_PASSWORD, MT5_SERVER env vars",
 )
 
 
@@ -19,7 +19,7 @@ INTEGRATION_SKIP = pytest.mark.skipif(
 class TestLiveConnection:
     """
     Requires:
-        MT5_LOGIN=<demo account number>
+        MT5_ACCOUNT=<demo account number>
         MT5_PASSWORD=<password>
         MT5_SERVER=<broker server name>
     """
@@ -28,7 +28,7 @@ class TestLiveConnection:
     def broker(self):
         from src.broker import BrokerConnection
 
-        account = int(os.environ["MT5_LOGIN"])
+        account = int(os.environ["MT5_ACCOUNT"])
         password = os.environ["MT5_PASSWORD"]
         server = os.environ["MT5_SERVER"]
 
@@ -62,7 +62,7 @@ class TestLiveMarketData:
     def setup(self):
         from src.broker import BrokerConnection, MarketData
 
-        account = int(os.environ["MT5_LOGIN"])
+        account = int(os.environ["MT5_ACCOUNT"])
         password = os.environ["MT5_PASSWORD"]
         server = os.environ["MT5_SERVER"]
 
