@@ -85,6 +85,17 @@ smc_engine:
     liquidity_sweep: 0.10
   min_candles: 50
 
+execution:
+  trailing:
+    activation_distance: 30.0   # price must move this many pips in trade direction before trailing activates
+    trailing_distance: 20.0     # distance in pips between current price and new SL when trailing
+  partial_close:
+    tp1_close_ratio: 0.5        # fraction of lot to close at TP1 (0.5 = 50%)
+  magic_number: 202605          # must be unique per running instance to avoid cross-contamination
+  slippage_points: 5            # max allowed slippage on market orders
+  kill_switch_path: "logs/kill_switch.json"
+  audit_log_path: "logs/trades.json"
+
 logging:
   level: INFO
   trades_log: logs/trades.json

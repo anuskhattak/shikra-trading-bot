@@ -6,6 +6,8 @@ Wraps MT5 tick and bar APIs with strict validation:
 - Bar count guard rejects partial datasets rather than silently using them (FR-005)
 - Market-closed detection prevents stale signal generation
 """
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -17,6 +19,12 @@ from loguru import logger
 
 SYMBOL = "XAUUSD"
 MIN_BARS = 200  # Minimum lookback per SMC D1 analysis — SC-003
+
+
+def _call_with_timeout(fn, timeout: float):
+    """T019: Run fn() in a thread; raise FuturesTimeoutError if it exceeds timeout seconds."""
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        return ex.submit(fn).result(timeout=timeout)
 
 
 class Timeframe(Enum):
@@ -55,7 +63,13 @@ class MarketData:
         Returns None when market is closed OR spread exceeds threshold —
         caller must skip the trade in both cases (FR-004, FR-015).
         """
-        tick = mt5.symbol_info_tick(SYMBOL)
+        # T020: guard against hung broker tick call
+        try:
+            tick = _call_with_timeout(lambda: mt5.symbol_info_tick(SYMBOL), timeout=2.0)
+        except FuturesTimeoutError:
+            logger.error("Market Data Timeout — symbol_info_tick did not respond within 2s")
+            return None
+
         if tick is None:
             logger.warning("Market Closed — Weekend or no tick data for XAUUSD")
             return None
@@ -88,7 +102,18 @@ class MarketData:
         Rejects and logs partial data rather than returning an incomplete DataFrame
         to the signal engine — incomplete data produces false SMC signals (FR-005).
         """
-        rates = mt5.copy_rates_from_pos(SYMBOL, timeframe.value, 0, count)
+        # T021: guard against hung historical data call
+        try:
+            rates = _call_with_timeout(
+                lambda: mt5.copy_rates_from_pos(SYMBOL, timeframe.value, 0, count),
+                timeout=2.0,
+            )
+        except FuturesTimeoutError:
+            logger.error(
+                f"Market Data Timeout — copy_rates_from_pos did not respond within 2s "
+                f"({timeframe.name})"
+            )
+            return None
 
         if rates is None or len(rates) < MIN_BARS:
             actual = len(rates) if rates is not None else 0

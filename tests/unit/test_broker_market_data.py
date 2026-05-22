@@ -3,14 +3,26 @@ Unit tests for MarketData — spread guard, bar count guard, market-closed detec
 
 All MT5 API calls are mocked. No live broker connection required.
 """
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pandas as pd
 import pytest
+from loguru import logger
 
 import MetaTrader5 as mt5
+import src.broker.market_data as md_module
 from src.broker.market_data import MarketData, Timeframe, MIN_BARS
+
+
+@pytest.fixture
+def loguru_sink():
+    """Capture all loguru output for log-content assertions."""
+    messages: list[str] = []
+    handler_id = logger.add(messages.append, level="DEBUG", colorize=False)
+    yield messages
+    logger.remove(handler_id)
 
 
 def _make_rates(count: int) -> list[dict]:
@@ -165,3 +177,38 @@ class TestGetAllTimeframes:
         assert result["H1"] is None
         assert result["D1"] is not None
         assert result["H4"] is not None
+
+
+# ---------------------------------------------------------------------------
+# T017 — get_quote() timeout (symbol_info_tick hangs > 2 s)
+# ---------------------------------------------------------------------------
+
+class TestGetQuoteTimeout:
+    @patch("src.broker.market_data.mt5")
+    def test_get_quote_timeout(self, mock_mt5, loguru_sink, monkeypatch):
+        """SC-002 edge: hung tick call must be cut off, logged, return None."""
+        monkeypatch.setattr(md_module, "_call_with_timeout",
+                            lambda fn, timeout: (_ for _ in ()).throw(FuturesTimeoutError()))
+
+        md = MarketData()
+        result = md.get_quote()
+
+        assert result is None
+        assert any("Market Data Timeout" in m for m in loguru_sink)
+
+
+# ---------------------------------------------------------------------------
+# T018 — get_ohlcv() timeout (copy_rates_from_pos hangs > 2 s)
+# ---------------------------------------------------------------------------
+
+class TestGetOhlcvTimeout:
+    @patch("src.broker.market_data.mt5")
+    def test_get_ohlcv_timeout(self, mock_mt5, monkeypatch):
+        """copy_rates_from_pos hang must return None, not block the engine."""
+        monkeypatch.setattr(md_module, "_call_with_timeout",
+                            lambda fn, timeout: (_ for _ in ()).throw(FuturesTimeoutError()))
+
+        md = MarketData()
+        result = md.get_ohlcv(Timeframe.H1)
+
+        assert result is None

@@ -1,13 +1,20 @@
 """
-Root conftest — session-wide MT5 mock.
+Root conftest — session-wide MT5 mock for unit tests.
 
 MetaTrader5 is a Windows-only broker library not available in CI or dev
 environments without a live terminal. Registering a permanent mock here
 lets @patch("src.broker.*.mt5") decorators resolve the module path without
 triggering a real MT5 import on every test setup.
+
+Integration tests (tests/integration/) override this mock with the real
+MT5 library — run them separately: pytest tests/integration/ -v
 """
 import sys
 from unittest.mock import MagicMock
+
+from dotenv import load_dotenv
+
+load_dotenv()  # Load .env so MT5_ACCOUNT etc. are available for skipif checks
 
 
 def pytest_configure(config):
