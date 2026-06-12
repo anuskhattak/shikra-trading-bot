@@ -2,6 +2,7 @@
 from src.analysis.adaptive_multipliers import get_adaptive_multipliers
 from src.analysis.atr_calculator import compute_atr, compute_true_range, validate_ohlcv_bars
 from src.analysis.atr_service import ATRService
+from src.analysis.h4_bias import H4BiasResult, H4BiasService
 from src.analysis.models import (
     ATRCache,
     ATRReading,
@@ -25,4 +26,6 @@ __all__ = [
     "validate_ohlcv_bars",
     "compute_reference_atr",
     "get_adaptive_multipliers",
+    "H4BiasService",
+    "H4BiasResult",
 ]

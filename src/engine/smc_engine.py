@@ -37,6 +37,7 @@ _PIPS_TO_DOLLARS = 0.10
 def generate_signal(
     df: pd.DataFrame,
     htf_bias: Bias = Bias.NEUTRAL,
+    htf_bias_strength: float = 0.0,
     config: dict | None = None,
 ) -> EntrySignal:
     """Run all SMC detectors in sequence and return a scored EntrySignal.
@@ -46,9 +47,10 @@ def generate_signal(
     Broker-agnostic: operates purely on pandas DataFrames (NFR-003).
 
     Args:
-        df:       OHLCV DataFrame — columns [time, open, high, low, close, tick_volume].
-        htf_bias: Pre-computed higher-timeframe bias from the caller (default NEUTRAL).
-        config:   Optional override dict merged onto config.yaml smc_engine values.
+        df:                OHLCV DataFrame — columns [time, open, high, low, close, tick_volume].
+        htf_bias:          Pre-computed higher-timeframe bias from the caller (default NEUTRAL).
+        htf_bias_strength: Strength score of the H4 bias (0.0–1.0, default 0.0).
+        config:            Optional override dict merged onto config.yaml smc_engine values.
 
     Returns:
         EntrySignal with direction LONG, SHORT, or NONE. Never None. Never raises.
@@ -107,6 +109,7 @@ def generate_signal(
             weights=weights,
             threshold=threshold,
             htf_bias=htf_bias,
+            htf_bias_strength=htf_bias_strength,
         )
 
     except Exception:  # noqa: BLE001

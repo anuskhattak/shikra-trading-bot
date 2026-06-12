@@ -16,6 +16,7 @@ import MetaTrader5 as mt5
 from loguru import logger
 
 from src.analysis.atr_service import ATRService
+from src.analysis.h4_bias import H4BiasService
 from src.analysis.models import OHLCVBar, Timeframe
 from src.broker.connection import BrokerConnection
 from src.broker.order_manager import OrderManager
@@ -53,6 +54,7 @@ class StrategyOrchestrator:
         self._config = config
         self._kill_switch_path = kill_switch_path
 
+        self._h4_bias_service = H4BiasService(config)
         self._last_bar_time: Optional[datetime] = None
         self._session_trades: int = 0
         self._session_start: Optional[datetime] = None
@@ -144,7 +146,7 @@ class StrategyOrchestrator:
             current_equity=self._current_equity,
         )
 
-        ctx = run_pipeline(ctx, self._atr_service, self._config)
+        ctx = run_pipeline(ctx, self._atr_service, self._config, self._h4_bias_service)
         self._last_bar_time = new_bar_time
 
         logger.info(

@@ -9,6 +9,7 @@ import pandas as pd
 from loguru import logger
 
 from src.analysis.atr_service import ATRService
+from src.analysis.h4_bias import H4BiasService
 from src.analysis.models import OHLCVBar, Timeframe
 from src.engine.models import Bias, Direction
 from src.engine.smc_engine import generate_signal
@@ -30,11 +31,17 @@ def _bars_to_df(bars: list[OHLCVBar]) -> pd.DataFrame:
     } for b in bars])
 
 
-def run_pipeline(ctx: PipelineContext, atr_service: ATRService, config: dict) -> PipelineContext:
-    """Run 4 sequential pipeline stages and return the enriched PipelineContext.
+def run_pipeline(
+    ctx: PipelineContext,
+    atr_service: ATRService,
+    config: dict,
+    h4_bias_service: H4BiasService | None = None,
+) -> PipelineContext:
+    """Run 5 sequential pipeline stages and return the enriched PipelineContext.
 
+    Stage 0 — H4 bias refresh: classify H4 structure; stores result in ctx.h4_bias_result.
     Stage 1 — ATR refresh: update cache for all timeframes in ctx.bars.
-    Stage 2 — SMC detection: generate EntrySignal from H1 bars.
+    Stage 2 — SMC detection: generate EntrySignal from H1 bars using live H4 bias.
     Stage 3 — Filter evaluation: session/spread/news/volatility gates.
     Stage 4 — Risk calculation: SL price, TP prices, lot size (technical only).
 
@@ -42,6 +49,11 @@ def run_pipeline(ctx: PipelineContext, atr_service: ATRService, config: dict) ->
     risk_calc is None whenever stage 4 is not reached.
     """
     risk_cfg = config.get("risk", {})
+
+    # ── Stage 0: H4 bias refresh ────────────────────────────────────────────
+    if h4_bias_service is not None:
+        h4_bars = ctx.bars.get(Timeframe.H4, [])
+        ctx.h4_bias_result = h4_bias_service.refresh(h4_bars)
 
     # ── Stage 1: ATR refresh ────────────────────────────────────────────────
     try:
@@ -61,7 +73,14 @@ def run_pipeline(ctx: PipelineContext, atr_service: ATRService, config: dict) ->
     # ── Stage 2: SMC signal detection ───────────────────────────────────────
     try:
         df = _bars_to_df(ctx.bars.get(Timeframe.H1, []))
-        ctx.entry_signal = generate_signal(df, htf_bias=Bias.NEUTRAL, config=config.get("smc_engine"))
+        htf_bias = ctx.h4_bias_result.bias if ctx.h4_bias_result is not None else Bias.NEUTRAL
+        htf_bias_strength = ctx.h4_bias_result.strength if ctx.h4_bias_result is not None else 0.0
+        ctx.entry_signal = generate_signal(
+            df,
+            htf_bias=htf_bias,
+            htf_bias_strength=htf_bias_strength,
+            config=config.get("smc_engine"),
+        )
     except Exception as exc:
         logger.error(f"[pipeline:{ctx.signal_id}] stage=SMC error={exc!r}")
         return ctx

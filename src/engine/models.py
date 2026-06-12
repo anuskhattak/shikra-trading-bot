@@ -20,6 +20,7 @@ class Bias(Enum):
     BULLISH = "BULLISH"
     BEARISH = "BEARISH"
     NEUTRAL = "NEUTRAL"
+    RANGING = "RANGING"
 
 
 class Direction(Enum):
@@ -146,3 +147,5 @@ class EntrySignal:
     components: list[str] = field(default_factory=list)
     signal_type: SignalType = field(default=SignalType.NONE)
     timestamp: datetime = field(default_factory=datetime.utcnow)
+    h4_bias: Bias = field(default=Bias.NEUTRAL)
+    h4_bias_strength: float = field(default=0.0)

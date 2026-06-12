@@ -35,6 +35,7 @@ def score_and_assemble(
     weights: dict[str, float],
     threshold: float,
     htf_bias: Bias,
+    htf_bias_strength: float = 0.0,
 ) -> EntrySignal:
     """Combine detected SMC components into a single scored EntrySignal.
 
@@ -45,22 +46,28 @@ def score_and_assemble(
                        entry records the full computed confidence for audit.
 
     Args:
-        signal_type:  BOS/CHoCH event from detect_structure_break().
-        fvg_zones:    All FVG zones from detect_fvg_zones().
-        order_blocks: All OBs from detect_order_blocks().
-        sweeps:       All sweeps from detect_liquidity_sweeps().
-        weights:      Component weights dict (keys: bos_or_choch, fvg, order_block, liquidity_sweep).
-        threshold:    Minimum confidence to accept a signal (default 0.65 from config).
-        htf_bias:     Caller-provided higher-timeframe bias enum.
+        signal_type:       BOS/CHoCH event from detect_structure_break().
+        fvg_zones:         All FVG zones from detect_fvg_zones().
+        order_blocks:      All OBs from detect_order_blocks().
+        sweeps:            All sweeps from detect_liquidity_sweeps().
+        weights:           Component weights dict (keys: bos_or_choch, fvg, order_block,
+                           liquidity_sweep, h4_alignment, mtf_boost).
+        threshold:         Minimum confidence to accept a signal (default 0.65 from config).
+        htf_bias:          Caller-provided higher-timeframe bias enum.
+        htf_bias_strength: Strength score of the H4 bias (0.0–1.0, default 0.0).
 
     Returns:
         EntrySignal with direction LONG/SHORT/NONE. Never None. Never raises.
     """
     now = datetime.now(timezone.utc)
 
+    # H4 RANGING — market is not in a defined trend; block all entries (spec007 US2)
+    if htf_bias == Bias.RANGING:
+        return _log_and_discard("H4_RANGING", 0.0, signal_type, now, htf_bias, htf_bias_strength)
+
     # No structural event → return NONE immediately; nothing to score or log
     if signal_type == SignalType.NONE:
-        return _none_signal("No structural event detected", now)
+        return _none_signal("No structural event detected", now, htf_bias, htf_bias_strength)
 
     direction = Direction.LONG if signal_type in _BULLISH_TYPES else Direction.SHORT
 
@@ -90,6 +97,15 @@ def score_and_assemble(
         components.append("Liquidity Sweep")
 
     confidence = min(1.0, max(0.0, confidence))
+
+    # H4 alignment boost + MTF multiplier (spec007 US3)
+    # Only fires when H4 bias and signal direction agree — never for counter-trend or NEUTRAL
+    if (htf_bias == Bias.BULLISH and direction == Direction.LONG) or \
+       (htf_bias == Bias.BEARISH and direction == Direction.SHORT):
+        confidence += float(weights.get("h4_alignment", 0.20))
+        components.append("H4_ALIGN")
+        confidence = min(1.0, confidence * float(weights.get("mtf_boost", 1.30)))
+
     reason = " + ".join(components)
 
     # --- HTF bias filter (FR-021) — applied after scoring for audit transparency ---
@@ -97,12 +113,12 @@ def score_and_assemble(
        (htf_bias == Bias.BEARISH and direction == Direction.LONG):
         return _log_and_discard(
             f"{reason} [HTF bias mismatch: {htf_bias.value}]",
-            confidence, signal_type, now,
+            confidence, signal_type, now, htf_bias, htf_bias_strength,
         )
 
     # --- Threshold filter (FR-019) ---
     if confidence < threshold:
-        return _log_and_discard(reason, confidence, signal_type, now)
+        return _log_and_discard(reason, confidence, signal_type, now, htf_bias, htf_bias_strength)
 
     # --- Determine entry zone (D-004, FR-017) ---
     # OB body is primary; FVG boundaries are fallback; 0.0 when neither is present
@@ -121,6 +137,8 @@ def score_and_assemble(
         components=components,
         signal_type=signal_type,
         timestamp=now,
+        h4_bias=htf_bias,
+        h4_bias_strength=htf_bias_strength,
     )
 
 
@@ -128,7 +146,12 @@ def score_and_assemble(
 # Private helpers
 # ---------------------------------------------------------------------------
 
-def _none_signal(reason: str, now: datetime) -> EntrySignal:
+def _none_signal(
+    reason: str,
+    now: datetime,
+    h4_bias: Bias = Bias.NEUTRAL,
+    h4_bias_strength: float = 0.0,
+) -> EntrySignal:
     """Return NONE EntrySignal for guard conditions — zero entry zone (FR-022)."""
     return EntrySignal(
         direction=Direction.NONE,
@@ -139,6 +162,8 @@ def _none_signal(reason: str, now: datetime) -> EntrySignal:
         components=[],
         signal_type=SignalType.NONE,
         timestamp=now,
+        h4_bias=h4_bias,
+        h4_bias_strength=h4_bias_strength,
     )
 
 
@@ -147,6 +172,8 @@ def _log_and_discard(
     confidence: float,
     signal_type: SignalType,
     now: datetime,
+    h4_bias: Bias = Bias.NEUTRAL,
+    h4_bias_strength: float = 0.0,
 ) -> EntrySignal:
     """Write discarded signal to false_signals.json and return NONE EntrySignal (FR-023)."""
     entry = {
@@ -172,4 +199,6 @@ def _log_and_discard(
         components=[],
         signal_type=signal_type,
         timestamp=now,
+        h4_bias=h4_bias,
+        h4_bias_strength=h4_bias_strength,
     )
