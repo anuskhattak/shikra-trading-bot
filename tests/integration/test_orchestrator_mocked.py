@@ -41,7 +41,15 @@ _CONFIG = {
                  "impact_levels": ["HIGH"], "calendar_path": ""},
         "volatility": {"atr_lookback": 14, "low_atr_ratio": 0.5, "extreme_atr_ratio": 5.0},
     },
-    "analysis": {"atr": {"period": 14, "reference_period": 20}},
+    "analysis": {
+        "atr": {"period": 14, "reference_period": 20},
+        "h4_bias": {
+            "lookback_bars": 20,
+            "fractal_n": 2,
+            "bullish_strength_threshold": 0.60,
+            "bearish_strength_threshold": 0.60,
+        },
+    },
 }
 
 

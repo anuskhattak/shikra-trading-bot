@@ -3,7 +3,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from src.analysis.h4_bias import H4BiasResult
 
 from src.analysis.models import ATRReading, OHLCVBar, Timeframe
 from src.engine.models import EntrySignal
@@ -30,10 +33,11 @@ class PipelineContext:
     current_equity: float = 10000.0
 
     # Output fields — populated by run_pipeline() stages
-    atr_readings:  dict[Timeframe, ATRReading] = field(default_factory=dict)
-    entry_signal:  Optional[EntrySignal]        = None
-    filter_result: Optional[TradeGateResult]    = None
-    risk_calc:     Optional[RiskCalculation]    = None
+    atr_readings:    dict[Timeframe, ATRReading]  = field(default_factory=dict)
+    entry_signal:    Optional[EntrySignal]         = None
+    filter_result:   Optional[TradeGateResult]     = None
+    risk_calc:       Optional[RiskCalculation]     = None
+    h4_bias_result:  Optional[H4BiasResult]        = None
 
 
 @dataclass

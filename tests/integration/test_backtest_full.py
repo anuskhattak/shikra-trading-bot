@@ -139,7 +139,13 @@ def bt_config_and_data(tmp_path):
                     "sl": {"LOW": 1.0, "NORMAL": 1.5, "EXTREME": 2.0},
                     "tp": {"LOW": 2.0, "NORMAL": 3.0, "EXTREME": 4.0},
                 },
-            }
+            },
+            "h4_bias": {
+                "lookback_bars": 20,
+                "fractal_n": 2,
+                "bullish_strength_threshold": 0.60,
+                "bearish_strength_threshold": 0.60,
+            },
         },
         "risk": {
             "sl_atr_multiplier":  1.5,

@@ -83,6 +83,8 @@ smc_engine:
     fvg: 0.30
     order_block: 0.20
     liquidity_sweep: 0.10
+    h4_alignment: 0.20
+    mtf_boost: 1.30
   min_candles: 50
 
 execution:
@@ -97,6 +99,11 @@ execution:
   audit_log_path: "logs/trades.json"
 
 analysis:
+  h4_bias:
+    lookback_bars: 20
+    fractal_n: 2
+    bullish_strength_threshold: 0.60
+    bearish_strength_threshold: 0.60
   atr:
     period: 14
     reference_period: 20

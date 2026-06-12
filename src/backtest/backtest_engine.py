@@ -14,6 +14,7 @@ from pathlib import Path
 from loguru import logger
 
 from src.analysis.atr_service import ATRService
+from src.analysis.h4_bias import H4BiasService
 from src.analysis.models import OHLCVBar, Timeframe
 from src.backtest.data_loader import load_ohlcv_csv
 from src.backtest.models import BacktestResult, SimulatedPosition, TradeRecord
@@ -39,6 +40,7 @@ class BacktestEngine:
         """Initialise the engine with the full application config dict."""
         self._config = config
         self._atr_service = ATRService(config)
+        self._h4_bias_service = H4BiasService(config)
 
     def run(self) -> BacktestResult:
         """Run full backtest and return a BacktestResult with performance metrics.
@@ -99,7 +101,7 @@ class BacktestEngine:
                 balance=balance,
                 current_equity=balance,
             )
-            ctx = run_pipeline(ctx, self._atr_service, self._config)
+            ctx = run_pipeline(ctx, self._atr_service, self._config, self._h4_bias_service)
             contexts.append(ctx)
 
             # Simulate existing open positions before opening new ones
