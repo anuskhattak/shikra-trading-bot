@@ -96,6 +96,31 @@ execution:
   kill_switch_path: "logs/kill_switch.json"
   audit_log_path: "logs/trades.json"
 
+analysis:
+  atr:
+    period: 14
+    reference_period: 20
+    adaptive_multipliers:
+      sl:
+        LOW: 1.0
+        NORMAL: 1.5
+        EXTREME: 2.0
+      tp:
+        LOW: 2.0
+        NORMAL: 3.0
+        EXTREME: 4.0
+
+orchestrator:
+  max_reconnect_retries: 5
+  reconnect_backoff_base_seconds: 1
+
+backtest:
+  initial_balance: 10000.0
+  spread_usd: 0.35
+  data_dir: "data/historical"
+  output_dir: "backtest/results"
+  risk_percent: 1.0
+
 logging:
   level: INFO
   trades_log: logs/trades.json

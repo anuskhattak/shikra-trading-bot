@@ -6,6 +6,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Union
 
+from src.analysis.models import VolatilityRegime  # canonical definition lives in analysis
+
 
 class FilterResult(Enum):
     ALLOWED = "ALLOWED"
@@ -18,12 +20,6 @@ class SessionLabel(Enum):
     NEW_YORK          = "NEW_YORK"
     LONDON_NY_OVERLAP = "LONDON_NY_OVERLAP"
     CLOSED            = "CLOSED"
-
-
-class VolatilityRegime(Enum):
-    LOW     = "LOW"
-    NORMAL  = "NORMAL"
-    EXTREME = "EXTREME"
 
 
 class NewsImpact(Enum):

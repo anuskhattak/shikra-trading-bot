@@ -18,8 +18,12 @@ logs/connection_events.json
 logs/false_signals.json
 logs/risk_events.json
 
-# Backtest data (large files)
+# Backtest data and generated results (runtime artifacts)
 backtest/data/
+backtest/results/
+
+# Screenshots / images
+images/
 
 # ML models
 backtest/models/
