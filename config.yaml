@@ -96,6 +96,20 @@ execution:
   kill_switch_path: "logs/kill_switch.json"
   audit_log_path: "logs/trades.json"
 
+analysis:
+  atr:
+    period: 14
+    reference_period: 20
+    adaptive_multipliers:
+      sl:
+        LOW: 1.0
+        NORMAL: 1.5
+        EXTREME: 2.0
+      tp:
+        LOW: 2.0
+        NORMAL: 3.0
+        EXTREME: 4.0
+
 logging:
   level: INFO
   trades_log: logs/trades.json

@@ -2,7 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(gh auth *)",
-      "PowerShell(gh auth *)"
+      "PowerShell(gh auth *)",
+      "Bash(pip install *)",
+      "Bash(python -m ruff check src/risk/)",
+      "Bash(git add *)",
+      "Bash(python -m pytest tests/unit/test_filters_trade_gate.py tests/integration/test_filters_pipeline.py -v)",
+      "Bash(python -c \"from src.execution.models import AuditAction, ExecutionSignal, PositionState, TradeAuditEntry, KillSwitchState; print\\('Import OK'\\)\")",
+      "Bash(python -m pytest tests/unit/test_execution_models.py -v)",
+      "Bash(bash .specify/scripts/bash/create-phr.sh --title \"Execution Engine Phase 1 Models Implementation\" --stage green --feature 005-execution-engine --json)",
+      "PowerShell(python -m pytest tests/unit/test_execution_position_manager.py -v --tb=short -q 2>&1 | Select-Object -Last 10)",
+      "PowerShell(python -m pytest tests/unit/test_execution_position_manager.py -v --tb=short 2>&1 | Select-Object -Last 50)",
+      "PowerShell(python -m pytest tests/unit/ -q --tb=short 2>&1 | Select-Object -Last 10)",
+      "Bash(python -m pytest tests/unit/test_execution_engine.py tests/unit/test_execution_audit_logger.py tests/unit/test_execution_kill_switch.py tests/unit/test_execution_models.py tests/unit/test_execution_position_manager.py tests/unit/test_execution_preflight.py tests/integration/test_execution_integration.py -v --tb=short)"
     ]
   }
 }
